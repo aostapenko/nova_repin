@@ -1,0 +1,32 @@
+Nova Repin
+---------------
+A small tool for correcting nova pinning information for mis-deployed compute nodes.
+
+Currently only tested on the OpenStack Kilo release.
+
+Usage
+---------------
+This tool assumes you have already compiled a list of instances that were scheduled with the wrong pinning information.
+
+- Update /etc/nova/nova.conf with the corect vcpu_pin_set setting
+
+- Restart nova-compute
+
+- run nova_repin on a controller node for any affected nodes. The --pinning-repin option can be repeated multiple times to allow for repinning several instances at once
+
+- hard reboot the instances to be re-pinned
+
+Example Usage
+--------------
+
+// Repinning aninstance:
+controller# ./nova_repin.py --pinning-repin c9b5fcdb-5a18-48d5-b94b-638d70bd99d6
+
+
+// Repinning multiple instances:
+controller# ./nova_repin.py --pinning-repin c9b5fcdb-5a18-48d5-b94b-638d70bd99d6 --pinning-repin ${another-uuid}
+
+
+// Checking instance pinning:
+controller# ./nova_repin --pinning-checkpin ${instance_uuid} --pinning-checkpinn ${another_uuid}
+
