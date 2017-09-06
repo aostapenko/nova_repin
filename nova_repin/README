@@ -2,7 +2,7 @@ Nova Repin
 ---------------
 A small tool for correcting nova pinning information for mis-deployed compute nodes.
 
-Currently only tested on the OpenStack Kilo release.
+Currently only tested on the OpenStack Mitaka release.
 
 Usage
 ---------------
@@ -29,4 +29,5 @@ controller# ./nova_repin.py --pinning-repin c9b5fcdb-5a18-48d5-b94b-638d70bd99d6
 
 // Checking instance pinning:
 controller# ./nova_repin --pinning-checkpin ${instance_uuid} --pinning-checkpinn ${another_uuid}
+
 
