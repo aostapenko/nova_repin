@@ -21,13 +21,18 @@ from nova.objects import instance_numa_topology
 from nova.api import metadata as instance_metadata
 from nova.virt import hardware
 from nova.objects import compute_node
-
+from nova import exception
 import pinning
+#import hardware
+from build_new_host_topology import build_new_host_topology
 
 objects.register_all()
 
 CONF = cfg.CONF
+CONF.debug = False
 
+logging.basicConfig(level=logging.DEBUG)
+LOG = logging.getLogger('pinning')
 
 conf_options = [ cfg.MultiStrOpt('repin', default=None),
                  cfg.MultiStrOpt('unpin', default=None),
@@ -39,12 +44,7 @@ conf_options = [ cfg.MultiStrOpt('repin', default=None),
 CONF.register_cli_opts(conf_options, group='pinning')
 config.parse_args(sys.argv)
 
-LOG = logging.getLogger(__name__)
 
-if CONF.pinning.debug == True:
-    LOG.setLevel(logging.DEBUG)
-else:
-    LOG.setLevel(logging.INFO)
 
     
 def instance_valid(func):
@@ -108,10 +108,18 @@ def pin(instance):
     host_topology = nt.obj_from_db_obj(topology_db_object)
     instance_topology = instance.numa_topology
     pinned = pinning.fit_to_host(host_topology, instance_topology)
+    #pinned = hardware.numa_fit_instance_to_host(host_topology, instance_topology)
     instance.save()
     return pinned
 
 def main():
+
+    
+    if CONF.pinning.debug == True:
+        LOG.setLevel(logging.DEBUG)
+    else:
+        LOG.setLevel(logging.INFO)
+        
     unpins = CONF.pinning.unpin
     repins = CONF.pinning.repin
     checkpins = CONF.pinning.checkpin
@@ -132,3 +140,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    print build_new_host_topology('node-3.domain.tld').cells
