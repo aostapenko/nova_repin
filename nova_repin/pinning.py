@@ -70,8 +70,6 @@ def _numa_fit_instance_cell_with_pinning(host_cell, instance_cell):
         # Straightforward to pin to available cpus when there is no
         # hyperthreading on the host
         free_cpus = [set([cpu]) for cpu in host_cell.free_cpus]
-        print "Host Cell Free CPUs: {}".format(host_cell.free_cpus)
-        print "Free CPUs: {}".format(free_cpus)
         return _pack_instance_onto_cores(
             free_cpus, instance_cell, host_cell.id)
 
@@ -96,8 +94,6 @@ def _numa_fit_instance_cell(host_cell, instance_cell, limit_cell=None):
         return None
 
     if instance_cell.cpu_pinning_requested:
-        print "pinning requested: {}".format(instance_cell.cpu_pinning_requested)
-        print "_numa_fit_instance_cell Host Cell: {}\nInstance Cell: {}".format(host_cell, instance_cell)
         new_instance_cell = _numa_fit_instance_cell_with_pinning(
             host_cell, instance_cell)
         if not new_instance_cell:
@@ -146,58 +142,40 @@ def _pack_instance_onto_cores(available_siblings, instance_cell, host_cell_id):
     # We build up a data structure 'can_pack' that answers the question:
     # 'Given the number of threads I want to pack, give me a list of all
     # the available sibling sets that can accommodate it'
-    print "Packing instances onto cores"
     can_pack = collections.defaultdict(list)
     for sib in available_siblings:
-        print "available siblings: {}".format(available_siblings)
-        print "Sibling: {}".format(sib)
-        print "threads_no: {}".format([x for x in range(1,len(sib)+1)])
         for threads_no in range(1, len(sib) + 1):
             can_pack[threads_no].append(sib)
-        print can_pack.items()
     def _can_pack_instance_cell(instance_cell, threads_per_core, cores_list):
         """Determines if instance cell can fit an avail set of cores."""
-        print "are we even getting called"
         
         if threads_per_core * len(cores_list) < len(instance_cell):
-            print "can pack instance cell threads per core returning false"
             return False
         """
         Ignore instance_cell.siblings
         This doesn't appear to get set until after this method is normally run
         """
         if False and instance_cell.siblings:
-            print "can pack instance cell siblings {}".format(instance_cell.siblings)
-            print "instance_cell.cpu_topology.threads {}".format(instance_cell.cpu_topology.threads)
             return instance_cell.cpu_topology.threads <= threads_per_core
         else:
             r_val = len(instance_cell) % threads_per_core == 0
-            print "can pack final: {}".format(r_val)
             return r_val
 
     # We iterate over the can_pack dict in descending order of cores that
     # can be packed - an attempt to get even distribution over time
     for cores_per_sib, sib_list in sorted(
             (t for t in can_pack.items()), reverse=True):
-        print "Can Pack Cell: {}".format(instance_cell)
-        print "cores per sib {}".format(cores_per_sib)
-        print "sib list {}".format(sib_list)
         canpack = _can_pack_instance_cell(instance_cell,
                                    cores_per_sib, sib_list)
-        print "canpack {}".format(canpack)
         if canpack:
             sliced_sibs = map(lambda s: list(s)[:cores_per_sib], sib_list)
-            print "can pack sliced_sibs: {}".format(sliced_sibs)
             if instance_cell.siblings:
                 pinning = zip(itertools.chain(*instance_cell.siblings),
                               itertools.chain(*sliced_sibs))
-                print "can pack has siblings {}\n{}\n\n".format(instance_cell.siblings, pinning)
             else:
                 pinning = zip(sorted(instance_cell.cpuset),
                               itertools.chain(*sliced_sibs))
-                print "got the else in cores_per_sib: {}".format(pinning)
-            print "\n\n\n\nEnd of pinning instance_cell.cpu_topology: {}".format(instance_cell.cpu_topology)
-
+           
             topology = (instance_cell.cpu_topology or
                         objects.VirtCPUTopology(sockets=1,
                                                 cores=len(sliced_sibs),
