@@ -30,7 +30,7 @@ def build_new_host_topology(compute_host, excluded_instance_uuids=[]):
     #print "Compute Host: {}".format(compute_host)
     compute_node = objects.compute_node.ComputeNodeList().get_by_hypervisor(ctx,compute_host)[0]
     host_topology = nt.obj_from_db_obj(compute_node.numa_topology)
-    print "Original Host Cells {}".format(host_topology.cells)
+    print "build_new_host_topology Original Host Cells {}".format(host_topology.cells)
 
     """
     Calculate an updated set of used cpus.
@@ -45,13 +45,14 @@ def build_new_host_topology(compute_host, excluded_instance_uuids=[]):
             for cell in inst.numa_topology.cells:
                 used_cpus += cell.cpu_pinning_raw.values()
     used_cpu_set = set(used_cpus)
+    print "Used CPU Set: {}".format(used_cpu_set)
                 
     for cell in host_topology.cells:
         host_available_cpus = cell.cpuset
         """ Take the intersection of the set of avaiable cpus and used cpus to calculate the new pinned_cpus set """
         new_pinned_cpus = host_available_cpus & used_cpu_set
         cell.pinned_cpus = new_pinned_cpus
-    print "Host Cells {}".format(host_topology.cells)
+    print "build_new_host_topology Host Cells {}".format(host_topology.cells)
     return host_topology
     
 

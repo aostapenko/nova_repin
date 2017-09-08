@@ -25,6 +25,7 @@ from nova import exception
 import pinning
 #import hardware
 from build_new_host_topology import build_new_host_topology
+from pinning import fit_to_host
 
 objects.register_all()
 
@@ -77,7 +78,6 @@ def pinning_logger(func):
     return logged
 
 @instance_valid
-@pinning_logger
 def unpin(instance):
     try:
         for cell in instance.numa_topology.cells:
@@ -89,26 +89,32 @@ def unpin(instance):
         
 @instance_valid
 def checkpin(instance):
+    print "Pinning Information for {}: {}".format(instance.uuid, instance.numa_topology.cells)
     return instance.numa_topology.cells
 
 @instance_valid
-@pinning_logger
 def repin(instance):
     unpin(instance)
     pin(instance)
 
 
 @instance_valid
-@pinning_logger
 def pin(instance):
     nt = numa.NUMATopology()
     computenodelist = objects.compute_node.ComputeNodeList()
     ctx = context.get_admin_context()
     topology_db_object = computenodelist.get_by_hypervisor(ctx, instance.node)[0].numa_topology
-    host_topology = nt.obj_from_db_obj(topology_db_object)
+    host_topology = build_new_host_topology(instance.host, instance.uuid)
+    print "Host Topology in main: {}".format(host_topology.cells)
     instance_topology = instance.numa_topology
-    pinned = pinning.fit_to_host(host_topology, instance_topology)
+    print "\n\n\n"
+    for x in instance.numa_topology.cells[0].items(): print x
+
+    
+    pinned = fit_to_host(host_topology, instance_topology)
+    print "pinned for {}: {}".format(instance.uuid, pinned)
     #pinned = hardware.numa_fit_instance_to_host(host_topology, instance_topology)
+    print "Instance New Topology {}: {}".format(instance.uuid, instance.numa_topology.cells)
     instance.save()
     return pinned
 
