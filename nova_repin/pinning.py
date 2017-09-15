@@ -4,6 +4,15 @@ import fractions
 import itertools
 from nova import objects
 from nova import exception
+from oslo_utils import units
+
+
+
+MEMPAGES_SMALL = -1
+MEMPAGES_LARGE = -2
+MEMPAGES_ANY = -3
+
+
 def fit_to_host(
         host_topology, instance_topology, limits=None,
         pci_requests=None, pci_stats=None):
@@ -184,3 +193,31 @@ def _pack_instance_onto_cores(available_siblings, instance_cell, host_cell_id):
             instance_cell.cpu_topology = topology
             instance_cell.id = host_cell_id
             return instance_cell
+
+
+def _numa_cell_supports_pagesize_request(host_cell, inst_cell):
+    """Determines whether the cell can accept the request.
+
+    :param host_cell: host cell to fit the instance cell onto
+    :param inst_cell: instance cell we want to fit
+
+    :returns: The page size able to be handled by host_cell
+    """
+    avail_pagesize = [page.size_kb for page in host_cell.mempages]
+    avail_pagesize.sort(reverse=True)
+
+    def verify_pagesizes(host_cell, inst_cell, avail_pagesize):
+        inst_cell_mem = inst_cell.memory * units.Ki
+        for pagesize in avail_pagesize:
+            if host_cell.can_fit_hugepages(pagesize, inst_cell_mem):
+                return pagesize
+
+    if inst_cell.pagesize == MEMPAGES_SMALL:
+        return verify_pagesizes(host_cell, inst_cell, avail_pagesize[-1:])
+    elif inst_cell.pagesize == MEMPAGES_LARGE:
+        return verify_pagesizes(host_cell, inst_cell, avail_pagesize[:-1])
+    elif inst_cell.pagesize == MEMPAGES_ANY:
+        return verify_pagesizes(host_cell, inst_cell, avail_pagesize)
+    else:
+        return verify_pagesizes(host_cell, inst_cell, [inst_cell.pagesize])
+
