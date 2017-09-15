@@ -33,11 +33,8 @@ def build_new_host_topology(compute_host, excluded_instance_uuids=[]):
     host_topology = nt.obj_from_db_obj(compute_node.numa_topology)
     host_instances = objects.instance.InstanceList().get_by_host(ctx, compute_host)
     instance_topologies = [instance.numa_topology for instance in host_instances if instance.uuid not in excluded_instance_uuids]
-    print "Original Host Topology: {}\n".format(host_topology.cells)
     host_topology = _calculate_cpu_usage(host_topology, instance_topologies)
-    print "Updated CPU Usage: {}\n".format(host_topology.cells)
     host_topology = _calculate_memory_usage(host_topology, instance_topologies)
-    print "Updated Memory Usage: {}\n".format(host_topology.cells)
     return host_topology
     
 
@@ -71,7 +68,6 @@ def _calculate_memory_usage(host_topology, instance_topologies=[]):
     all_inst_cells = [cell for instance in instance_topologies for cell in instance.cells]
 
     uses_pages = reduce(lambda l, r: l and r, map(check_for_pages, all_inst_cells), True)
-    print "Uses Pages: {}".format(uses_pages)
     if uses_pages:
         return _calculate_memory_page_usage(host_topology, instance_topologies)
     
@@ -116,8 +112,6 @@ def _calculate_memory_page_usage(host_topology, instance_topologies=[]):
             
         consumption[cell] = cell_consumption
         page_consumption[cell] = cell_page_consumption
-    print "Consumption {}".format(consumption)
-    print "Page Consumption {}".format(page_consumption)
 
     # We've been operating on primitives. Update the original host_topology object with our calculations to pass on to the next calculation
     
