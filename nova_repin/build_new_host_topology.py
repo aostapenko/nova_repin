@@ -32,12 +32,13 @@ def build_new_host_topology(compute_host, excluded_instance_uuids=[]):
     compute_node = objects.compute_node.ComputeNodeList().get_by_hypervisor(ctx,compute_host)[0]
     host_topology = nt.obj_from_db_obj(compute_node.numa_topology)
     host_instances = objects.instance.InstanceList().get_by_host(ctx, compute_host)
-    instance_topologies = [instance.numa_topology for instance in host_instances if instance.uuid not in excluded_uuids]
-    print "Original Host Topology: {}\n".format(host_cpu_usage)
+    instance_topologies = [instance.numa_topology for instance in host_instances if instance.uuid not in excluded_instance_uuids]
+    print "Original Host Topology: {}\n".format(host_topology.cells)
     host_topology = _calculate_cpu_usage(host_topology, instance_topologies)
-    print "Updated CPU Usage: {}\n".format(host_cpu_usage)
-    host_topology = _calculate_memory_page_usage(host_topology, instance_topologies)
-    print "Updated Memory Usage: {}\n".format(host_cpu_usage)
+    print "Updated CPU Usage: {}\n".format(host_topology.cells)
+    host_topology = _calculate_memory_usage(host_topology, instance_topologies)
+    print "Updated Memory Usage: {}\n".format(host_topology.cells)
+    return host_topology
     
 
 def _calculate_cpu_usage(host_topology, instance_topologies=[]):
@@ -47,7 +48,7 @@ def _calculate_cpu_usage(host_topology, instance_topologies=[]):
     the values are the host's CPU numbers.
     We only need the values from cpu_pinning_raw to calculate this.
     """
-    all_inst_cells = [cell for instance in instance_topologies for cell in instance.numa_topology.cells]
+    all_inst_cells = [cell for instance in instance_topologies for cell in instance.cells]
     used_cpus = []
     for cell in all_inst_cells:
         used_cpus += cell.cpu_pinning_raw.values()
@@ -67,16 +68,19 @@ def _calculate_memory_usage(host_topology, instance_topologies=[]):
     Calculate the Memory usage for each of the host's numa cells.
     """
     check_for_pages = lambda cell: hasattr(cell, 'mempages')
-    all_inst_cells = [cell for instance in instance_topologies for cell in instance.numa_topology.cells]
+    all_inst_cells = [cell for instance in instance_topologies for cell in instance.cells]
 
-    reduce(lambda l, r: l and r, map(check_for_pages, all_inst_cells), True)
+    uses_pages = reduce(lambda l, r: l and r, map(check_for_pages, all_inst_cells), True)
+    print "Uses Pages: {}".format(uses_pages)
+    if uses_pages:
+        return _calculate_memory_page_usage(host_topology, instance_topologies)
     
     host_cell_memory_usage = defaultdict(lambda: 0)
     for cell in all_inst_cells:
         host_cell_memory_usage[cell.id] += cell.memory
         
     for cell in host_topology.cells:
-        cell.memory_usage = host_memory_cell_usage[cell.id]
+        cell.memory_usage = host_cell_memory_usage[cell.id]
         
     return host_topology
     
@@ -88,7 +92,7 @@ def _calculate_memory_page_usage(host_topology, instance_topologies=[]):
     # host_cells = dict([(x.id,[]) for x in host_topology.cells])
     # host_page_sizes = list(set([page.size_kb for cell in host_topology.cells for page in cell.mempages]))
 
-    all_inst_cells = [cell for instance in instance_topologies for cell in instance.numa_topology.cells]
+    all_inst_cells = [cell for instance in instance_topologies for cell in instance.cells]
 
     host_cells = defaultdict(list)
     for inst_cell in all_inst_cells:
@@ -119,8 +123,7 @@ def _calculate_memory_page_usage(host_topology, instance_topologies=[]):
     
     for cell in host_topology.cells:
         for page in cell.mempages:
-            for page_size in page:
-                page_size.used = page_consumption[cell.id][pagesize.size_kb]
+            page.used = page_consumption[cell.id][page.size_kb]
         cell.memory_usage = sum(consumption[cell.id].values())
             
     return host_topology

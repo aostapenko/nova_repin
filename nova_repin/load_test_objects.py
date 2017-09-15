@@ -4,7 +4,7 @@ import os
 from nova import objects
 import json
 from oslo_utils import units
-from build_new_host_topology import _calculate_memory_page_usage
+import build_new_host_topology
 
 objects.register_all()
 
