@@ -2,7 +2,7 @@ Nova Repin
 ---------------
 A small tool for correcting nova pinning information for mis-deployed compute nodes.
 
-Currently only tested on the OpenStack Mitaka release.
+This branch is only tested on the OpenStack Kilo release.
 
 Usage
 ---------------
