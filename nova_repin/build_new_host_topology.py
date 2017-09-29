@@ -117,7 +117,13 @@ def _calculate_memory_page_usage(host_topology, instance_topologies=[]):
     
     for cell in host_topology.cells:
         for page in cell.mempages:
-            page.used = page_consumption[cell.id][page.size_kb]
-        cell.memory_usage = sum(consumption[cell.id].values())
+            if cell.id in page_consumption.keys():
+                page.used = page_consumption[cell.id][page.size_kb]
+            else:
+                page.used = 0
+        if cell.id in consumption.keys():
+            cell.memory_usage = sum(consumption[cell.id].values())
+        else:
+            cell.memory_usage = 0
             
     return host_topology
