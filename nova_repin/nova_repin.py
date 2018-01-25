@@ -22,10 +22,7 @@ from nova.api import metadata as instance_metadata
 from nova.virt import hardware
 from nova.objects import compute_node
 from nova import exception
-import pinning
-#import hardware
 from build_new_host_topology import build_new_host_topology
-from pinning import fit_to_host
 
 objects.register_all()
 
@@ -131,7 +128,7 @@ def pin(instance):
     LOG.debug("Old Instance Topology for {}: {}".format(instance.uuid, old_topology))
     LOG.debug("Old Instance Pinning {}: {}".format(instance.uuid, old_topology.cells))
 
-    pinned = fit_to_host(host_topology, instance_topology)
+    pinned = hardware.numa_fit_instance_to_host(host_topology, instance_topology)
     LOG.debug("New Instance Topology for {}: {}".format(instance.uuid, pinned))
     LOG.debug("New Instance Pinning {}: {}".format(instance.uuid, instance.numa_topology.cells))
 
