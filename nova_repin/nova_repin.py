@@ -4,16 +4,14 @@
 # Collin May
 # cmay@mirantis.com
 # 2017-09-02
-# 
+#
 # Andrey Ostapenko
 # aostapenko@mirantis.com
 # 2018-01-25
 #
 
 import argparse
-import functools
 import logging
-import sys
 
 from nova import config
 from nova import context
@@ -36,6 +34,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('action', choices=ALLOWED_ACTIONS)
 parser.add_argument('instance', type=str)
 parser.add_argument('--debug', default=False, action='store_true')
+parser.add_argument('--dry-run', default=False, action='store_true')
 
 
 def _update_usage(instance, compute_node, free):
@@ -71,21 +70,27 @@ def _pin(instance, compute_node):
     _update_usage(instance, compute_node, free=False)
 
 
-def do_unpin(instance, compute_node):
+def do_unpin(instance, compute_node, dry_run=False):
     _unpin(instance, compute_node)
+    if dry_run:
+        return
     instance.save()
     compute_node.save()
 
 
-def do_repin(instance, compute_node):
+def do_repin(instance, compute_node, dry_run=False):
     _unpin(instance, compute_node)
     _pin(instance, compute_node)
+    if dry_run:
+        return
     instance.save()
     compute_node.save()
 
 
-def do_pin(instance, compute_node):
+def do_pin(instance, compute_node, dry_run=False):
     _pin(instance, compute_node)
+    if dry_run:
+        return
     instance.save()
     compute_node.save()
 
@@ -102,10 +107,19 @@ def print_status(instance, compute_node, message):
                         compute_node.numa_topology)
     print(message)
     print(_table(("Instance", "Pinning"),
-                (instance.uuid, instance.numa_topology.cells)))
+                 (instance.uuid, instance.numa_topology.cells)))
     print(_table(("Compute Node", "Pinning"),
-                (instance.host, host_topology.cells)))
-    print "\n\n"
+                 (instance.host, host_topology.cells)))
+    print("\n\n")
+
+
+def dry_run_msg():
+    dry_run_msg = "--- RUNNING IN DRY-RUN MODE. CHANGES WON'T BE APPLIED ---"
+    print("\n")
+    print("-" * len(dry_run_msg))
+    print(dry_run_msg)
+    print("-" * len(dry_run_msg))
+    print("\n")
 
 
 def main():
@@ -118,9 +132,11 @@ def main():
     compute_node = objects.compute_node.ComputeNode.get_by_host_and_nodename(
         ctx, instance.host, instance.node)
 
+    if args.dry_run:
+        dry_run_msg()
     print_status(instance, compute_node, "Before %s:" % args.action)
     action = 'do_{}'.format(args.action)
-    eval(action)(instance, compute_node)
+    eval(action)(instance, compute_node, args.dry_run)
     print_status(instance, compute_node, "After %s:" % args.action)
 
     instance = objects.instance.Instance.get_by_uuid(ctx, args.instance)
