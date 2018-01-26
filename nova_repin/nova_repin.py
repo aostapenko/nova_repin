@@ -1,213 +1,132 @@
 #!/usr/bin/env python
-"""
-Nova Re-pin
-Collin May
-cmay@mirantis.com
-2017-09-02
-"""
+#
+# Nova Re-pin
+# Collin May
+# cmay@mirantis.com
+# 2017-09-02
+# 
+# Andrey Ostapenko
+# aostapenko@mirantis.com
+# 2018-01-25
+#
 
+import argparse
 import functools
 import logging
 import sys
-
-from build_new_host_topology import build_new_host_topology
 
 from nova import config
 from nova import context
 from nova import objects
 from nova.virt import hardware
-from oslo_config import cfg
 import prettytable
 
 objects.register_all()
 
-CONF = cfg.CONF
-CONF.debug = False
+# NOTE(aostapenko) Allow nova config to set default arguments, not using it
+# for script purposes
+config.parse_args([])
 
 logging.basicConfig(level=logging.INFO)
 LOG = logging.getLogger('pinning')
 
-conf_options = [
-   cfg.MultiStrOpt('repin', default=None),
-   cfg.MultiStrOpt('unpin', default=None),
-   cfg.MultiStrOpt('pin', default=None),
-   cfg.MultiStrOpt('checkpin', default=None),
-   cfg.BoolOpt('serialize', default=False),
-   cfg.BoolOpt('debug', default=False),
-]
+ALLOWED_ACTIONS = ['pin', 'unpin', 'repin']
 
-CONF.register_cli_opts(conf_options, group='pinning')
-config.parse_args(sys.argv)
+parser = argparse.ArgumentParser()
+parser.add_argument('action', choices=ALLOWED_ACTIONS)
+parser.add_argument('instance', type=str)
+parser.add_argument('--debug', default=False, action='store_true')
 
 
-def instance_valid(func):
-    @functools.wraps(func)
-    def validate(inst):
-        valid_inst = None
-        if type(inst) == objects.instance.Instance:
-            valid_inst = inst
-        else:
-            try:
-                ctx = context.get_admin_context()
-                ic = objects.instance.Instance()
-                valid_inst = ic.get_by_uuid(ctx, inst)
-            except Exception as e:
-                LOG.warn("{}".format(e))
-            if valid_inst:
-                try:
-                    valid_inst.numa_topology.cells
-                except:
-                    LOG.warn("Instance {} has no pinning information"
-                             .format(inst))
-                    valid_inst = None
-
-        if valid_inst:
-            LOG.debug("Valid Instance '{}' Running {}"
-                      .format(valid_inst.uuid, func.func_name))
-            return func(valid_inst)
-        else:
-            return
-    return validate
+def _update_usage(instance, compute_node, free):
+    updated_numa_topology = hardware.get_host_numa_usage_from_instance(
+        compute_node, instance, free)
+    compute_node.numa_topology = updated_numa_topology
 
 
-def pinning_logger(func):
-    """
-    Add log messages before and after an operation that will change
-    an instance's CPU pinning
-    """
-    @functools.wraps(func)
-    def logged(inst):
-        LOG.info("Initial Cell Pinning for {}: {}"
-                 .format(inst.uuid, inst.numa_topology.cells))
-        result = func(inst)
-        LOG.info("Updated Cell Pinning for {}: {}"
-                 .format(inst.uuid, inst.numa_topology.cells))
-        return result
-    return logged
+def _validate_empty_pinning(instance):
+    cells = instance.numa_topology.cells
+    for cell in cells:
+        if cell.cpu_pinning:
+            raise Exception("Can't pin already pinned instance. "
+                            "Unpin it first. (%s)" % cells)
 
 
-@instance_valid
-def unpin(instance):
-    try:
-        for cell in instance.numa_topology.cells:
-            cell['cpu_pinning_raw'] = {}
-        instance.save()
-    except Exception as e:
-        LOG.error("Error Unpinning Instance: {}".format(instance.uuid))
-        LOG.debug("Instance UUID: {} Raised: {}".format(instance.uuid, e))
-
-
-@instance_valid
-def checkpin(instance):
-    print("Pinning Information for {}: {}"
-          .format(instance.uuid, instance.numa_topology.cells))
-    return instance.numa_topology.cells
-
-
-@instance_valid
-def repin(instance):
-    # we are passing the same instance object into the pin function
-    # pin will take care of saving if it successfully generates a new mapping
-    old_topology = instance.numa_topology
-    LOG.debug("Instance Topology for {} before repinning: {}"
-              .format(instance.uuid, old_topology))
-    LOG.debug("Instance Pinning {} before repinning: {}"
-              .format(instance.uuid, old_topology.cells))
-
+def _unpin(instance, compute_node):
+    _update_usage(instance, compute_node, free=True)
+    # NOTE (aostapenko) Not using clear_host_pinning to keep compatibility with
+    # vanilla kilo
     for cell in instance.numa_topology.cells:
-        cell['cpu_pinning_raw'] = {}
-    pin(instance)
+        cell.id = -1
+        cell.cpu_pinning = {}
 
 
-@instance_valid
-def pin(instance):
-    host_topology = build_new_host_topology(instance.host, instance.uuid)
-    LOG.debug("Host Topology: {}".format(host_topology.cells))
-
-    instance_topology = instance.numa_topology
-    old_topology = instance_topology.obj_clone()
-    LOG.debug("Old Instance Topology for {}: {}"
-              .format(instance.uuid, old_topology))
-    LOG.debug("Old Instance Pinning {}: {}"
-              .format(instance.uuid, old_topology.cells))
-
+def _pin(instance, compute_node):
+    _validate_empty_pinning(instance)
+    host_topology = objects.numa.NUMATopology.obj_from_db_obj(
+                        compute_node.numa_topology)
     pinned = hardware.numa_fit_instance_to_host(host_topology,
-                                                instance_topology)
-    LOG.debug("New Instance Topology for {}: {}".format(instance.uuid, pinned))
-    LOG.debug("New Instance Pinning {}: {}"
-              .format(instance.uuid, instance.numa_topology.cells))
-
-    """
-    # Test that saves don't overwrite with an empty mapping
-    for cell in instance.numa_topology.cells:
-        cell['cpu_pinning_raw'] = {}
-    """
-
-    cells_are_populated = [cell.cpu_pinning_raw != {}
-                           for cell in instance.numa_topology.cells]
-    if reduce(lambda l, r: l or r, cells_are_populated):
-        LOG.debug("Saving new pinning for {}".format(instance.uuid))
-        instance.save()
-    else:
-        LOG.warn("Pinning for {} failed".format(instance.uuid))
-    return {'old': old_topology, 'new': pinned}
+                                                instance.numa_topology)
+    instance.numa_topology = pinned
+    _update_usage(instance, compute_node, free=False)
 
 
-def checkpins_table(checkpins):
-    validate = instance_valid(lambda x: x)
-    pt = prettytable.PrettyTable(['Instance', 'Pinning'])
+def do_unpin(instance, compute_node):
+    _unpin(instance, compute_node)
+    instance.save()
+    compute_node.save()
+
+
+def do_repin(instance, compute_node):
+    _unpin(instance, compute_node)
+    _pin(instance, compute_node)
+    instance.save()
+    compute_node.save()
+
+
+def do_pin(instance, compute_node):
+    _pin(instance, compute_node)
+    instance.save()
+    compute_node.save()
+
+
+def _table(fields, values):
+    pt = prettytable.PrettyTable(fields)
     pt.align = 'l'
-    for inst in checkpins:
-        res = validate(inst)
-        if res:
-            res_cells = str(res.numa_topology.cells)
-        else:
-            res_cells = "Not Found"
-        pt.add_row([inst, res_cells])
+    pt.add_row(values)
     return pt
 
 
+def print_status(instance, compute_node, message):
+    host_topology = objects.numa.NUMATopology.obj_from_db_obj(
+                        compute_node.numa_topology)
+    print(message)
+    print(_table(("Instance", "Pinning"),
+                (instance.uuid, instance.numa_topology.cells)))
+    print(_table(("Compute Node", "Pinning"),
+                (instance.host, host_topology.cells)))
+    print "\n\n"
+
+
 def main():
-    if CONF.pinning.debug is True:
+    args = parser.parse_args()
+    if args.debug:
         LOG.setLevel(logging.DEBUG)
-    else:
-        LOG.setLevel(logging.INFO)
 
-    unpins = CONF.pinning.unpin
-    repins = CONF.pinning.repin
-    checkpins = CONF.pinning.checkpin
-    pins = CONF.pinning.pin
-    all_pins = []
-    if unpins:
-        all_pins += unpins
-        unpins = set(unpins)
-        check_unpins = checkpins_table(unpins)
-        print("Before Unpinning\n{}\n".format(check_unpins))
-        for inst in unpins:
-            unpin(inst)
+    ctx = context.get_admin_context()
+    instance = objects.instance.Instance.get_by_uuid(ctx, args.instance)
+    compute_node = objects.compute_node.ComputeNode.get_by_host_and_nodename(
+        ctx, instance.host, instance.node)
 
-    if pins:
-        all_pins += pins
-        pins = set(pins)
-        check_pins = checkpins_table(pins)
-        print("Before Pinning\n{}\n".format(check_pins))
-        for inst in set(pins):
-            pin(inst)
+    print_status(instance, compute_node, "Before %s:" % args.action)
+    action = 'do_{}'.format(args.action)
+    eval(action)(instance, compute_node)
+    print_status(instance, compute_node, "After %s:" % args.action)
 
-    if repins:
-        all_pins += repins
-        repins = set(repins)
-        check_repins = checkpins_table(repins)
-        print("Before Repinning\n{}\n".format(check_repins))
-
-        for inst in set(repins):
-            repin(inst)
-
-    if checkpins:
-        all_pins += checkpins
-
-    all_checkpins = checkpins_table(set(all_pins))
-    print("Current Pinning Information\n{}\n".format(all_checkpins))
+    instance = objects.instance.Instance.get_by_uuid(ctx, args.instance)
+    compute_node = objects.compute_node.ComputeNode.get_by_host_and_nodename(
+        ctx, instance.host, instance.node)
+    print_status(instance, compute_node, "Current status:")
 
 
 if __name__ == "__main__":

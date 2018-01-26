@@ -8,26 +8,24 @@ Usage
 ---------------
 This tool assumes you have already compiled a list of instances that were scheduled with the wrong pinning information.
 
-- Update /etc/nova/nova.conf with the corect vcpu_pin_set setting
+- Update /etc/nova/nova.conf with the correct vcpu_pin_set setting
 
 - Restart nova-compute
 
-- run nova_repin on a controller node for any affected nodes. The --pinning-repin option can be repeated multiple times to allow for repinning several instances at once
+- run nova_repin on a controller node for any affected instances
 
 - hard reboot the instances to be re-pinned
 
 Example Usage
 --------------
 
-// Repinning aninstance:
-controller# ./nova_repin.py --pinning-repin c9b5fcdb-5a18-48d5-b94b-638d70bd99d6
+// Unsetting instance cpu pinning:
+controller# ./nova_repin.py unpin <instance-uuid>
 
 
-// Repinning multiple instances:
-controller# ./nova_repin.py --pinning-repin c9b5fcdb-5a18-48d5-b94b-638d70bd99d6 --pinning-repin ${another-uuid}
+// Setting cpu pinning for unpinned instance:
+controller# ./nova_repin.py pin <instance-uuid>
 
 
-// Checking instance pinning:
-controller# ./nova_repin --pinning-checkpin ${instance_uuid} --pinning-checkpinn ${another_uuid}
-
-
+// Recalculating and setting instance cpu pinning if calculation was successful:
+controller# ./nova_repin.py repin <instance-uuid>
