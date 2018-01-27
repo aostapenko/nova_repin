@@ -35,6 +35,7 @@ parser.add_argument('action', choices=ALLOWED_ACTIONS)
 parser.add_argument('instance', type=str)
 parser.add_argument('--debug', default=False, action='store_true')
 parser.add_argument('--dry-run', default=False, action='store_true')
+parser.add_argument('--save', default=False, action='store_true')
 
 
 def _update_usage(instance, compute_node, free):
@@ -70,29 +71,38 @@ def _pin(instance, compute_node):
     _update_usage(instance, compute_node, free=False)
 
 
-def do_unpin(instance, compute_node, dry_run=False):
+def save(f):
+    def wrapped(instance, compute_node, action, dry_run=False, yes=False):
+        if dry_run:
+            dry_run_msg()
+
+        print_status(instance, compute_node, "Before %s:" % action)
+        f(instance, compute_node)
+        print_status(instance, compute_node, "After %s:" % action)
+
+        save = (not dry_run and (yes or raw_input(
+                    "Write 'save' to persist changes: ") == 'save'))
+        if not save:
+            return
+        instance.save()
+        compute_node.save()
+    return wrapped
+
+
+@save
+def do_unpin(instance, compute_node):
     _unpin(instance, compute_node)
-    if dry_run:
-        return
-    instance.save()
-    compute_node.save()
 
 
-def do_repin(instance, compute_node, dry_run=False):
+@save
+def do_repin(instance, compute_node):
     _unpin(instance, compute_node)
     _pin(instance, compute_node)
-    if dry_run:
-        return
-    instance.save()
-    compute_node.save()
 
 
-def do_pin(instance, compute_node, dry_run=False):
+@save
+def do_pin(instance, compute_node):
     _pin(instance, compute_node)
-    if dry_run:
-        return
-    instance.save()
-    compute_node.save()
 
 
 def _table(fields, values):
@@ -132,12 +142,8 @@ def main():
     compute_node = objects.compute_node.ComputeNode.get_by_host_and_nodename(
         ctx, instance.host, instance.node)
 
-    if args.dry_run:
-        dry_run_msg()
-    print_status(instance, compute_node, "Before %s:" % args.action)
     action = 'do_{}'.format(args.action)
-    eval(action)(instance, compute_node, args.dry_run)
-    print_status(instance, compute_node, "After %s:" % args.action)
+    eval(action)(instance, compute_node, args.action, args.dry_run, args.save)
 
     instance = objects.instance.Instance.get_by_uuid(ctx, args.instance)
     compute_node = objects.compute_node.ComputeNode.get_by_host_and_nodename(
