@@ -149,6 +149,8 @@ def main():
     compute_node = objects.compute_node.ComputeNode.get_by_host_and_nodename(
         ctx, instance.host, instance.node)
 
+    if args.action not in ALLOWED_ACTIONS:
+        raise Exception("Allowed action are: %s" % ', '.join(ALLOWED_ACTIONS))
     action = 'do_{}'.format(args.action)
     eval(action)(instance, compute_node, args.action, args.dry_run, args.save)
 
