@@ -21,13 +21,10 @@ import prettytable
 
 objects.register_all()
 
-# NOTE(aostapenko) Allow nova config to set default arguments, not using it
-# for script purposes
-config.parse_args([])
-
 logging.basicConfig(level=logging.INFO)
 LOG = logging.getLogger('pinning')
 
+DRY_RUN_MSG = "--- RUNNING IN DRY-RUN MODE. CHANGES WON'T BE APPLIED ---"
 ALLOWED_ACTIONS = ['pin', 'unpin', 'repin']
 
 parser = argparse.ArgumentParser()
@@ -36,6 +33,8 @@ parser.add_argument('instance', type=str)
 parser.add_argument('--debug', default=False, action='store_true')
 parser.add_argument('--dry-run', default=False, action='store_true')
 parser.add_argument('--save', default=False, action='store_true')
+parser.add_argument('--nova-config', default=None)
+parser.add_argument('--mysql-connection', default=None)
 
 
 def _update_usage(instance, compute_node, free):
@@ -124,11 +123,10 @@ def print_status(instance, compute_node, message):
 
 
 def dry_run_msg():
-    dry_run_msg = "--- RUNNING IN DRY-RUN MODE. CHANGES WON'T BE APPLIED ---"
     print("\n")
-    print("-" * len(dry_run_msg))
-    print(dry_run_msg)
-    print("-" * len(dry_run_msg))
+    print("-" * len(DRY_RUN_MSG))
+    print(DRY_RUN_MSG)
+    print("-" * len(DRY_RUN_MSG))
     print("\n")
 
 
@@ -136,6 +134,15 @@ def main():
     args = parser.parse_args()
     if args.debug:
         LOG.setLevel(logging.DEBUG)
+
+    nova_config = []
+    if args.nova_config:
+        nova_config = [args.nova_config]
+    config.parse_args([], default_config_files=nova_config)
+    if args.mysql_connection:
+        config.CONF.set_override('connection',
+                                 args.mysql_connection,
+                                 'database')
 
     ctx = context.get_admin_context()
     instance = objects.instance.Instance.get_by_uuid(ctx, args.instance)
